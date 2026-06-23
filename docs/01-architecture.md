@@ -1,0 +1,136 @@
+# Architecture — How Everything Connects
+
+## The two repos and their responsibilities
+
+| Repo | Responsibility | Deploys via |
+|------|---------------|-------------|
+| `nyc-taxi-glue` | Python Glue scripts (the actual job code) | GitHub Actions → S3 |
+| `nyc-taxi-glue-terraform` | AWS infrastructure (Glue jobs, S3 buckets, IAM roles) | GitHub Actions → Terraform Cloud → AWS |
+
+---
+
+## End-to-end flow diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Repo 1: nyc-taxi-glue (App)         Repo 2: nyc-taxi-glue-terraform        │
+│                                                                               │
+│  scripts/                             modules/glue_job/  ← define once      │
+│    yellow_taxi/                       environments/dev/                      │
+│      download.py ─────────────────────→ script_location = s3://...          │
+│                                                                               │
+│  .github/workflows/                   .github/workflows/                     │
+│    deploy-scripts.yml                   terraform.yml                        │
+│         │                                    │                               │
+│  [OIDC] │ exchanges GitHub JWT              │ TFC_API_TOKEN secret           │
+│         ▼                                    ▼                               │
+│    AWS STS                            Terraform Cloud                        │
+│    assumes role:                            │                                │
+│    github-glue-script-deploy-role    [OIDC] │ exchanges TFC JWT              │
+│         │                                    ▼                               │
+│         ▼                             AWS STS                                │
+│    S3 (uploads .py file)              assumes role:                          │
+│    nyc-taxi-glue-scripts-*            terraform-cloud-deploy-role            │
+│                                             │                                │
+│                                             ▼                                │
+│                                       AWS creates/updates:                   │
+│                                       - S3 buckets                           │
+│                                       - Glue execution role                  │
+│                                       - Glue job (points to S3 script)       │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+                    When Glue job RUNS (triggered manually or on schedule):
+
+                    AWS Glue service
+                         │
+                   assumes role:
+                   nyc-taxi-glue-execution-role-dev
+                         │
+                         ├── reads script from S3 (nyc-taxi-glue-scripts-*)
+                         ├── executes download_yellow_taxi_april_2026.py
+                         └── writes parquet to S3 (nyc-taxi-raw-data-*)
+```
+
+---
+
+## What is a Glue job — clearing the misconception
+
+A Glue job is **not just a JSON file**. It has two distinct parts:
+
+### Part 1 — Job definition (what Terraform manages)
+An AWS resource that contains configuration:
+- Which script to run (S3 path)
+- Which IAM role to use
+- Compute type and size (Python Shell vs Spark, DPU count)
+- Timeout and retry settings
+- Default arguments passed to the script
+
+Terraform's `aws_glue_job` resource creates this. It is *represented* as JSON/HCL but it lives as an AWS API object.
+
+### Part 2 — The script (what the app repo manages)
+A Python `.py` file stored in S3. This is the actual business logic — what downloads, transforms, or loads data. Glue pulls this file from S3 at runtime and executes it.
+
+**Terraform manages Part 1. The app repo manages Part 2. Both must exist for a job to run.**
+
+---
+
+## The three IAM roles
+
+| Role name | Who assumes it | When | What it can do |
+|-----------|---------------|------|----------------|
+| `github-glue-script-deploy-role` | GitHub Actions (app repo) | On push to master | Upload `.py` files to the scripts S3 bucket |
+| `terraform-cloud-deploy-role` | Terraform Cloud | On every plan/apply run | Create/update Glue jobs, S3 buckets, IAM roles |
+| `nyc-taxi-glue-execution-role-dev` | AWS Glue service | When the job runs | Read scripts from S3, write output data to S3 |
+
+Each role uses a **trust policy** that restricts exactly who can assume it:
+- The GitHub role trusts only the `ranjanumesh11/nyc-taxi-glue` repo
+- The TFC role trusts only the `nyc-taxi-glue-dev` workspace in the `demo-kt-101` org
+- The Glue role trusts only `glue.amazonaws.com`
+
+---
+
+## The module pattern — one module, many jobs
+
+The `modules/glue_job/` folder is a reusable template. It is written once and never changed for individual jobs. To add a new Glue job, add a new `module` block in `environments/dev/main.tf`:
+
+```hcl
+# Existing job
+module "yellow_taxi_april_2026_download" {
+  source          = "../../modules/glue_job"
+  job_name        = "yellow-taxi-april-2026-download"
+  script_location = "s3://.../scripts/yellow_taxi/download_yellow_taxi_april_2026.py"
+  role_arn        = aws_iam_role.glue_execution.arn
+  default_arguments = {
+    "--output_bucket" = aws_s3_bucket.raw_data.bucket
+    "--output_prefix" = "yellow/2026/04"
+  }
+}
+
+# Future job — just a new block, module unchanged
+module "green_taxi_april_2026_download" {
+  source          = "../../modules/glue_job"
+  job_name        = "green-taxi-april-2026-download"
+  script_location = "s3://.../scripts/green_taxi/download_green_taxi_april_2026.py"
+  role_arn        = aws_iam_role.glue_execution.arn
+  default_arguments = {
+    "--output_bucket" = aws_s3_bucket.raw_data.bucket
+    "--output_prefix" = "green/2026/04"
+  }
+}
+```
+
+---
+
+## Python Shell vs Spark (glueetl) jobs
+
+The current setup uses **Python Shell** jobs. Here is the difference:
+
+| | Python Shell | Glue ETL (Spark) |
+|--|--|--|
+| Use case | Simple downloads, API calls, lightweight transforms | Large-scale distributed data processing |
+| Compute | 0.0625 DPU (1/16) or 1 DPU | 2+ workers (G.1X, G.2X) |
+| Cost | ~$0.044/hour for 1/16 DPU | Much higher |
+| Script type | Plain Python + boto3 | PySpark / Spark SQL |
+| Terraform field | `max_capacity` | `number_of_workers` + `worker_type` |
+
+For downloading NYC taxi data (a simple HTTP download + S3 upload), Python Shell is the right choice.

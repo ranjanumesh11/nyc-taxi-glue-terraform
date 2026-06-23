@@ -2,8 +2,8 @@ data "aws_caller_identity" "current" {}
 
 locals {
   account_id      = data.aws_caller_identity.current.account_id
-  scripts_bucket  = "nyc-taxi-glue-scripts-${local.account_id}"
-  raw_data_bucket = "nyc-taxi-raw-data-${local.account_id}"
+  scripts_bucket  = "nyc-taxi-glue-scripts-${local.account_id}-${var.environment}"
+  raw_data_bucket = "nyc-taxi-raw-data-${local.account_id}-${var.environment}"
   common_tags = {
     Environment = var.environment
     Project     = "nyc-taxi"
