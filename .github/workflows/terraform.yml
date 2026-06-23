@@ -2,10 +2,9 @@ name: Terraform
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
-    branches: [main]
-    # plan runs on every PR to main so you see exactly what will change before merging
+    branches: [main, dev]
 
 permissions:
   contents: read
@@ -20,9 +19,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # hashicorp/setup-terraform configures the CLI to talk to Terraform Cloud.
-      # The TFC_API_TOKEN tells TFC "this GitHub Actions run is authorized".
-      # The actual terraform plan/apply then runs INSIDE Terraform Cloud, not here.
+      # Resolve which environment folder to run based on the target branch.
+      # PR to dev  → environments/dev/   (plan only)
+      # Push to dev → environments/dev/  (plan + apply)
+      # PR to main  → environments/prod/ (plan only)
+      # Push to main → environments/prod/ (plan + apply)
+      - name: Resolve environment directory
+        id: env
+        run: |
+          TARGET="${{ github.base_ref || github.ref_name }}"
+          if [ "$TARGET" = "main" ]; then
+            echo "dir=environments/prod" >> $GITHUB_OUTPUT
+            echo "name=prod" >> $GITHUB_OUTPUT
+          else
+            echo "dir=environments/dev" >> $GITHUB_OUTPUT
+            echo "name=dev" >> $GITHUB_OUTPUT
+          fi
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
@@ -30,23 +43,21 @@ jobs:
 
       - name: Terraform Init
         run: terraform init
-        working-directory: environments/dev
+        working-directory: ${{ steps.env.outputs.dir }}
 
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
-        working-directory: environments/dev
+        working-directory: ${{ steps.env.outputs.dir }}
 
       - name: Terraform Validate
         run: terraform validate
-        working-directory: environments/dev
+        working-directory: ${{ steps.env.outputs.dir }}
 
-      # Plan always runs (on PR and on push to main).
-      - name: Terraform Plan
+      - name: Terraform Plan (${{ steps.env.outputs.name }})
         run: terraform plan -no-color
-        working-directory: environments/dev
+        working-directory: ${{ steps.env.outputs.dir }}
 
-      # Apply only runs when a commit lands on main (not on PRs).
-      - name: Terraform Apply
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      - name: Terraform Apply (${{ steps.env.outputs.name }})
+        if: github.event_name == 'push'
         run: terraform apply -auto-approve
-        working-directory: environments/dev
+        working-directory: ${{ steps.env.outputs.dir }}
