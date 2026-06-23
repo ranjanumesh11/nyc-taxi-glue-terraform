@@ -32,8 +32,8 @@ variable "max_capacity" {
 }
 
 variable "max_retries" {
-  type        = number
-  default     = 0
+  type    = number
+  default = 0
 }
 
 variable "timeout" {
