@@ -15,8 +15,8 @@
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  Repo 1: nyc-taxi-glue (App)         Repo 2: nyc-taxi-glue-terraform        │
 │                                                                               │
-│  scripts/                             modules/glue_job/  ← define once      │
-│    yellow_taxi/                       environments/dev/                      │
+│  scripts/                             modules/glue_job/  ← module template  │
+│    yellow_taxi/                       main.tf (repo root) ← job definitions │
 │      download.py ─────────────────────→ script_location = s3://...          │
 │                                                                               │
 │  .github/workflows/                   .github/workflows/                     │
@@ -91,33 +91,44 @@ Each role uses a **trust policy** that restricts exactly who can assume it:
 
 ## The module pattern — one module, many jobs
 
-The `modules/glue_job/` folder is a reusable template. It is written once and never changed for individual jobs. To add a new Glue job, add a new `module` block in `environments/dev/main.tf`:
+There are **two** `main.tf` files in this repo — this is intentional:
+
+| File | Purpose |
+|------|---------|
+| `main.tf` (repo root) | Declares which Glue jobs exist — one `module` block per job |
+| `modules/glue_job/main.tf` | The module implementation — defines the `aws_glue_job` resource template |
+
+The `modules/glue_job/` folder is a reusable template written once and never changed for individual jobs. To add a new Glue job, add a new `module` block in `main.tf` at the **repo root** — not inside `modules/`:
 
 ```hcl
-# Existing job
+# Existing job — in main.tf at repo root
 module "yellow_taxi_april_2026_download" {
-  source          = "../../modules/glue_job"
-  job_name        = "yellow-taxi-april-2026-download"
-  script_location = "s3://.../scripts/yellow_taxi/download_yellow_taxi_april_2026.py"
+  source          = "./modules/glue_job"
+  job_name        = "yellow-taxi-april-2026-download${local.env_suffix}"
+  script_location = "s3://${aws_s3_bucket.glue_scripts.bucket}/scripts/yellow_taxi/download_yellow_taxi_april_2026.py"
   role_arn        = aws_iam_role.glue_execution.arn
   default_arguments = {
     "--output_bucket" = aws_s3_bucket.raw_data.bucket
     "--output_prefix" = "yellow/2026/04"
   }
+  tags = local.common_tags
 }
 
-# Future job — just a new block, module unchanged
+# Adding a new job — just a new block below, module unchanged
 module "green_taxi_april_2026_download" {
-  source          = "../../modules/glue_job"
-  job_name        = "green-taxi-april-2026-download"
-  script_location = "s3://.../scripts/green_taxi/download_green_taxi_april_2026.py"
+  source          = "./modules/glue_job"
+  job_name        = "green-taxi-april-2026-download${local.env_suffix}"
+  script_location = "s3://${aws_s3_bucket.glue_scripts.bucket}/scripts/green_taxi/download_green_taxi_april_2026.py"
   role_arn        = aws_iam_role.glue_execution.arn
   default_arguments = {
     "--output_bucket" = aws_s3_bucket.raw_data.bucket
     "--output_prefix" = "green/2026/04"
   }
+  tags = local.common_tags
 }
 ```
+
+The `source = "./modules/glue_job"` path resolves from repo root. Terraform Cloud uploads the entire repo root directory, so `modules/` is always reachable.
 
 ---
 
