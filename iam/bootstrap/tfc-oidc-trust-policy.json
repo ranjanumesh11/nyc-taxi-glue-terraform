@@ -12,7 +12,7 @@
           "app.terraform.io:aud": "aws.workload.identity"
         },
         "StringLike": {
-          "app.terraform.io:sub": "organization:demo-kt-101:project:*:workspace:nyc-taxi-glue-dev:run_phase:*"
+          "app.terraform.io:sub": "organization:demo-kt-101:project:*:workspace:nyc-taxi-glue-*:run_phase:*"
         }
       }
     }
