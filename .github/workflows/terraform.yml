@@ -1,0 +1,51 @@
+name: Terraform
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  terraform:
+    name: Plan & Apply
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # hashicorp/setup-terraform configures the CLI to talk to Terraform Cloud.
+      # The TFC_API_TOKEN tells TFC "this GitHub Actions run is authorized".
+      # The actual terraform plan/apply then runs INSIDE Terraform Cloud, not here.
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          cli_config_credentials_token: ${{ secrets.TFC_API_TOKEN }}
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: environments/dev
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+        working-directory: environments/dev
+
+      - name: Terraform Validate
+        run: terraform validate
+        working-directory: environments/dev
+
+      # Plan always runs (on PR and on push to main).
+      - name: Terraform Plan
+        run: terraform plan -no-color
+        working-directory: environments/dev
+
+      # Apply only runs when a commit lands on main (not on PRs).
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: terraform apply -auto-approve
+        working-directory: environments/dev
