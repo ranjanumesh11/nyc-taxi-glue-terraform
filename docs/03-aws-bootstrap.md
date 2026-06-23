@@ -93,15 +93,20 @@ aws iam put-role-policy `
 
 ---
 
-### Role 3: nyc-taxi-glue-execution-role-dev
+### Role 3: nyc-taxi-glue-execution-role (+ env suffix)
 
-**Purpose:** Used by AWS Glue when the job actually runs. Created and managed **by Terraform** (in `iam.tf` at repo root) — not manually.
+**Purpose:** Used by AWS Glue when the job actually runs. Created and managed **by Terraform** (in `iam.tf` at repo root) — not manually. The name includes the environment suffix from `local.env_suffix`:
+
+| Environment | Role name |
+|-------------|-----------|
+| dev workspace | `nyc-taxi-glue-execution-role-dev` |
+| prod workspace | `nyc-taxi-glue-execution-role` |
 
 **Trust policy:** `glue.amazonaws.com` can assume this role.
 
 **Permissions:**
-- Read from `nyc-taxi-glue-scripts-721559935914` (to fetch the script)
-- Read/write to `nyc-taxi-raw-data-721559935914` (to write downloaded data)
+- Read from the scripts bucket for that environment (e.g. `nyc-taxi-glue-scripts-721559935914-dev`)
+- Read/write to the raw data bucket for that environment (e.g. `nyc-taxi-raw-data-721559935914-dev`)
 - CloudWatch Logs via the `AWSGlueServiceRole` managed policy
 
 ---
@@ -111,10 +116,11 @@ aws iam put-role-policy `
 ```powershell
 aws iam get-role --role-name github-glue-script-deploy-role --profile default --query Role.Arn
 aws iam get-role --role-name terraform-cloud-deploy-role --profile default --query Role.Arn
+# Glue execution role — check dev environment:
 aws iam get-role --role-name nyc-taxi-glue-execution-role-dev --profile default --query Role.Arn
 ```
 
-The third role only appears after Terraform has run for the first time.
+The Glue execution role only appears after Terraform has run for the first time for that environment.
 
 ---
 

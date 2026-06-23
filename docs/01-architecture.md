@@ -78,13 +78,13 @@ A Python `.py` file stored in S3. This is the actual business logic — what dow
 
 | Role name | Who assumes it | When | What it can do |
 |-----------|---------------|------|----------------|
-| `github-glue-script-deploy-role` | GitHub Actions (app repo) | On push to master | Upload `.py` files to the scripts S3 bucket |
+| `github-glue-script-deploy-role` | GitHub Actions (app repo) | On push to `dev` or `main` when scripts change | Upload `.py` files to the scripts S3 bucket |
 | `terraform-cloud-deploy-role` | Terraform Cloud | On every plan/apply run | Create/update Glue jobs, S3 buckets, IAM roles |
-| `nyc-taxi-glue-execution-role-dev` | AWS Glue service | When the job runs | Read scripts from S3, write output data to S3 |
+| `nyc-taxi-glue-execution-role<env_suffix>` | AWS Glue service | When the job runs | Read scripts from S3, write output data to S3 |
 
 Each role uses a **trust policy** that restricts exactly who can assume it:
-- The GitHub role trusts only the `ranjanumesh11/nyc-taxi-glue` repo
-- The TFC role trusts only the `nyc-taxi-glue-dev` workspace in the `demo-kt-101` org
+- The GitHub role trusts only the `ranjanumesh11/nyc-taxi-glue` repo on any branch (`ref:refs/heads/*`)
+- The TFC role trusts any workspace matching `nyc-taxi-glue-*` in `demo-kt-101` org (covers dev and prod)
 - The Glue role trusts only `glue.amazonaws.com`
 
 ---
