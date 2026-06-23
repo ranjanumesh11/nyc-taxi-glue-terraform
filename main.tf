@@ -2,7 +2,7 @@
 # Add a green_taxi job? Copy this block, change job_name, script_location, and arguments.
 
 module "yellow_taxi_april_2026_download" {
-  source = "../../modules/glue_job"
+  source = "./modules/glue_job"
 
   job_name        = "yellow-taxi-april-2026-download${local.env_suffix}"
   description     = "Downloads NYC yellow taxi April 2026 parquet from the public TLC dataset to S3"

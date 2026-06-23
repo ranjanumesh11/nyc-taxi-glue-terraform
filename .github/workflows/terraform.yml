@@ -19,21 +19,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Resolve which environment folder to run based on the target branch.
-      # PR to dev  → environments/dev/   (plan only)
-      # Push to dev → environments/dev/  (plan + apply)
-      # PR to main  → environments/prod/ (plan only)
-      # Push to main → environments/prod/ (plan + apply)
-      - name: Resolve environment directory
-        id: env
+      # Select TFC workspace based on target branch.
+      # TF_WORKSPACE env var tells TFC which tagged workspace to use.
+      # Both workspaces must have the tag "nyc-taxi-glue" set in TFC UI.
+      - name: Select TFC workspace
         run: |
           TARGET="${{ github.base_ref || github.ref_name }}"
           if [ "$TARGET" = "main" ]; then
-            echo "dir=environments/prod" >> $GITHUB_OUTPUT
-            echo "name=prod" >> $GITHUB_OUTPUT
+            echo "TF_WORKSPACE=nyc-taxi-glue-prod" >> $GITHUB_ENV
+            echo "ENV_NAME=prod" >> $GITHUB_ENV
           else
-            echo "dir=environments/dev" >> $GITHUB_OUTPUT
-            echo "name=dev" >> $GITHUB_OUTPUT
+            echo "TF_WORKSPACE=nyc-taxi-glue-dev" >> $GITHUB_ENV
+            echo "ENV_NAME=dev" >> $GITHUB_ENV
           fi
 
       - name: Setup Terraform
@@ -41,23 +38,20 @@ jobs:
         with:
           cli_config_credentials_token: ${{ secrets.TFC_API_TOKEN }}
 
+      # Run from repo root so the entire repo (including modules/) is uploaded to TFC.
+      # TFC agent resolves ./modules/glue_job relative to repo root correctly.
       - name: Terraform Init
         run: terraform init
-        working-directory: ${{ steps.env.outputs.dir }}
 
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
-        working-directory: ${{ steps.env.outputs.dir }}
 
       - name: Terraform Validate
         run: terraform validate
-        working-directory: ${{ steps.env.outputs.dir }}
 
-      - name: Terraform Plan (${{ steps.env.outputs.name }})
+      - name: Terraform Plan (${{ env.ENV_NAME }})
         run: terraform plan -no-color
-        working-directory: ${{ steps.env.outputs.dir }}
 
-      - name: Terraform Apply (${{ steps.env.outputs.name }})
+      - name: Terraform Apply (${{ env.ENV_NAME }})
         if: github.event_name == 'push'
         run: terraform apply -auto-approve
-        working-directory: ${{ steps.env.outputs.dir }}
