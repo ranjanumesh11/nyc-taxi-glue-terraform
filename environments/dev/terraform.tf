@@ -4,7 +4,7 @@ terraform {
   # Terraform Cloud as remote backend — all plan/apply runs happen in TFC,
   # not on the GitHub Actions runner. The runner just calls the TFC API.
   cloud {
-    organization = "REPLACE_TFC_ORG_NAME"
+    organization = "demo-kt-101"
     workspaces {
       name = "nyc-taxi-glue-dev"
     }

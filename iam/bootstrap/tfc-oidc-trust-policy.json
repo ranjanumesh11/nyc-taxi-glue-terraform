@@ -4,7 +4,7 @@
     {
       "Effect": "Allow",
       "Principal": {
-        "Federated": "arn:aws:iam::REPLACE_ACCOUNT_ID:oidc-provider/app.terraform.io"
+        "Federated": "arn:aws:iam::721559935914:oidc-provider/app.terraform.io"
       },
       "Action": "sts:AssumeRoleWithWebIdentity",
       "Condition": {
@@ -12,7 +12,7 @@
           "app.terraform.io:aud": "aws.workload.identity"
         },
         "StringLike": {
-          "app.terraform.io:sub": "organization:REPLACE_TFC_ORG_NAME:project:*:workspace:nyc-taxi-glue-dev:run_phase:*"
+          "app.terraform.io:sub": "organization:demo-kt-101:project:*:workspace:nyc-taxi-glue-dev:run_phase:*"
         }
       }
     }
