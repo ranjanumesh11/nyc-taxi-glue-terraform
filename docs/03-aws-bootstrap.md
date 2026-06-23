@@ -43,11 +43,11 @@ Result: `arn:aws:iam::721559935914:oidc-provider/app.terraform.io`
 
 **Trust policy** (`iam/bootstrap/github-oidc-trust-policy.json`):
 - Allows `token.actions.githubusercontent.com` to assume this role
-- Scoped to only pushes on `master` branch of `ranjanumesh11/nyc-taxi-glue`
+- Scoped to any branch (`ref:refs/heads/*`) of `ranjanumesh11/nyc-taxi-glue` — covers both `dev` and `main` deploys
 
 **Permissions** (`iam/bootstrap/github-deploy-permissions.json`):
 - `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`, `s3:ListBucket`
-- Only on `nyc-taxi-glue-scripts-721559935914` bucket
+- On both `nyc-taxi-glue-scripts-721559935914-dev` (dev) and `nyc-taxi-glue-scripts-721559935914` (prod) buckets
 
 Created with:
 ```powershell
@@ -71,7 +71,7 @@ aws iam put-role-policy `
 
 **Trust policy** (`iam/bootstrap/tfc-oidc-trust-policy.json`):
 - Allows `app.terraform.io` to assume this role via OIDC
-- Scoped to only the `nyc-taxi-glue-dev` workspace in `demo-kt-101` org
+- Scoped to any workspace matching `nyc-taxi-glue-*` in `demo-kt-101` org — covers both `nyc-taxi-glue-dev` and `nyc-taxi-glue-prod`
 
 **Permissions** (`iam/bootstrap/tfc-deploy-permissions.json`):
 - Full access to Glue, S3, CloudWatch Logs
@@ -95,7 +95,7 @@ aws iam put-role-policy `
 
 ### Role 3: nyc-taxi-glue-execution-role-dev
 
-**Purpose:** Used by AWS Glue when the job actually runs. Created and managed **by Terraform** (in `environments/dev/iam.tf`) — not manually.
+**Purpose:** Used by AWS Glue when the job actually runs. Created and managed **by Terraform** (in `iam.tf` at repo root) — not manually.
 
 **Trust policy:** `glue.amazonaws.com` can assume this role.
 

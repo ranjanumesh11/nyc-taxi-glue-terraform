@@ -6,7 +6,8 @@
 |------|-------|
 | Platform | [app.terraform.io](https://app.terraform.io) |
 | Organization | `demo-kt-101` |
-| Workspace | `nyc-taxi-glue-dev` |
+| Dev workspace | `nyc-taxi-glue-dev` |
+| Prod workspace | `nyc-taxi-glue-prod` |
 | Workspace type | CLI-driven |
 
 ---
@@ -21,10 +22,18 @@ Terraform Cloud handles:
 
 ---
 
-## Workspace: nyc-taxi-glue-dev
+## Two workspaces, one codebase
 
-**Type: CLI-driven workflow**
-This means GitHub Actions calls `terraform plan` / `terraform apply` using the Terraform CLI. The CLI is configured to talk to TFC via the `cloud {}` block in `environments/dev/terraform.tf`. The actual execution happens inside TFC — the GitHub runner just orchestrates.
+The same Terraform code at repo root deploys to either dev or prod depending on which workspace is selected. The GitHub Actions workflow sets `TF_WORKSPACE` based on the target branch:
+
+| Branch | TFC Workspace | AWS resources |
+|--------|--------------|---------------|
+| `dev` | `nyc-taxi-glue-dev` | Suffix `-dev` on all names |
+| `main` | `nyc-taxi-glue-prod` | No suffix (prod) |
+
+`TF_WORKSPACE` is an environment variable the Terraform CLI reads. The `terraform.tf` cloud block uses `workspaces { tags = ["nyc-taxi-glue"] }` (not a hardcoded workspace name), which makes the tag-based lookup work with `TF_WORKSPACE`.
+
+Both workspaces must have the `nyc-taxi-glue` tag applied in TFC UI → Workspace settings → Tags.
 
 ---
 
@@ -49,7 +58,7 @@ TFC calls AWS STS: AssumeRoleWithWebIdentity
          ▼
 AWS checks the app.terraform.io OIDC provider:
   - Is the JWT signature valid? ✓
-  - Does sub match organization:demo-kt-101:project:*:workspace:nyc-taxi-glue-dev:run_phase:*? ✓
+  - Does sub match organization:demo-kt-101:project:*:workspace:nyc-taxi-glue-*:run_phase:*? ✓
          │
          ▼
 AWS STS returns temporary credentials
@@ -68,20 +77,27 @@ Run completes → credentials expire automatically → nothing to clean up
 
 ### Workspace variables that enable this
 
-Set on the `nyc-taxi-glue-dev` workspace under **Variables → Environment variables**:
+Set on **each workspace** under **Variables → Environment variables**:
 
-| Key | Value | Sensitive |
-|-----|-------|-----------|
-| `TFC_AWS_PROVIDER_AUTH` | `true` | No |
-| `TFC_AWS_RUN_ROLE_ARN` | `arn:aws:iam::721559935914:role/terraform-cloud-deploy-role` | No |
+| Key | Value | Sensitive | Note |
+|-----|-------|-----------|------|
+| `TFC_AWS_PROVIDER_AUTH` | `true` | No | Tells TFC to use OIDC for AWS auth |
+| `TFC_AWS_RUN_ROLE_ARN` | `arn:aws:iam::721559935914:role/terraform-cloud-deploy-role` | No | Which role to assume |
 
-These two variables are all that is needed. The AWS provider in `terraform.tf` has no credentials configured — TFC injects them automatically at runtime.
+And under **Variables → Terraform variables** (these map to `variable {}` blocks in HCL):
+
+| Key | Value | HCL checkbox |
+|-----|-------|-------------|
+| `aws_region` | `us-east-1` | **Unchecked** (plain string) |
+| `environment` | `dev` (dev workspace) or `""` (prod workspace) | **Unchecked** (plain string) |
+
+> **Important:** The HCL checkbox must be unchecked for plain string values. If checked, TFC writes `aws_region = us-east-1` (no quotes) which is invalid HCL.
 
 ---
 
 ## TFC API token — for GitHub Actions
 
-GitHub Actions needs a TFC API token to authenticate the Terraform CLI to TFC. This is a **User token** (not org/team/audit):
+GitHub Actions needs a TFC API token to authenticate the Terraform CLI to TFC. This is a **User token**:
 
 - Go to [app.terraform.io](https://app.terraform.io) → avatar → **User settings** → **Tokens**
 - Create token named `github-actions`, no expiry (rotate manually for production)
@@ -98,10 +114,10 @@ GitHub Actions needs a TFC API token to authenticate the Terraform CLI to TFC. T
 
 ### Security best practice for secrets
 
-Never paste tokens in chat or commit them to git. When working with tools like Claude Code:
+Never paste tokens in chat or commit them to git. The safe pattern:
 1. Set the token in your own terminal: `$env:TFC_TOKEN = "..."`
-2. Run the secret-setting command yourself: `gh secret set TFC_API_TOKEN --body $env:TFC_TOKEN --repo ...`
-3. The value never appears in chat or logs
+2. Run the secret-setting command yourself: `gh secret set TFC_API_TOKEN --body $env:TFC_TOKEN --repo ranjanumesh11/nyc-taxi-glue-terraform`
+3. The value flows from memory → GitHub → never visible in logs or chat
 
 ---
 
@@ -111,3 +127,15 @@ After a successful Terraform apply, you should see in the TFC workspace:
 - **Runs** tab: a green completed apply
 - **States** tab: current state with S3 buckets and Glue job
 - **Resources** tab: all created resources listed
+
+Expected resources after first apply:
+- `aws_s3_bucket.glue_scripts`
+- `aws_s3_bucket.raw_data`
+- `aws_s3_bucket_versioning.glue_scripts`
+- `aws_s3_bucket_versioning.raw_data`
+- `aws_s3_bucket_public_access_block.glue_scripts`
+- `aws_s3_bucket_public_access_block.raw_data`
+- `aws_iam_role.glue_execution`
+- `aws_iam_role_policy.glue_s3`
+- `aws_iam_role_policy_attachment.glue_service`
+- `module.yellow_taxi_april_2026_download.aws_glue_job.this`
