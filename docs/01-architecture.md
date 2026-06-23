@@ -121,6 +121,23 @@ module "green_taxi_april_2026_download" {
 
 ---
 
+## S3 buckets — why we don't use the auto-created aws-glue-assets bucket
+
+When you create a Glue job through the **AWS console**, AWS automatically provisions a bucket named `aws-glue-assets-<account-id>-<region>`. This is a convenience feature — AWS silently creates it and points the job's script location and temp storage there.
+
+When creating Glue jobs through **Terraform** (or any API/CLI call), AWS does not automatically provision this bucket. Terraform creates exactly what you declare — no hidden side effects.
+
+We explicitly defined our own S3 buckets:
+
+| Bucket | Purpose |
+|--------|---------|
+| `nyc-taxi-glue-scripts-<account-id>[-dev]` | Stores Python scripts (.py files) |
+| `nyc-taxi-raw-data-<account-id>[-dev]` | Stores downloaded parquet output |
+
+This gives us full control over naming (predictable, environment-suffixed), lifecycle policies, access controls, and versioning — rather than relying on a bucket AWS auto-names and auto-configures with whatever defaults it chooses.
+
+---
+
 ## Python Shell vs Spark (glueetl) jobs
 
 The current setup uses **Python Shell** jobs. Here is the difference:
